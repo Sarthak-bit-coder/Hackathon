@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Neighborhood Watch</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="container">
+    <h1>Neighborhood Watch</h1>
+
+    <form id="reportForm">
+      <select name="type" id="type" required>
+        <option value="">Select Type</option>
+        <option value="Safety Concern">Safety Concern</option>
+        <option value="Lost Item">Lost Item</option>
+        <option value="Suspicious Activity">Suspicious Activity</option>
+      </select>
+      <textarea name="description" id="description" placeholder="Describe the issue..." required></textarea>
+      <button type="submit">Submit</button>
+    </form>
+
+    <hr />
+    <h2>Reports</h2>
+    <div id="reportList"></div>
+  </div>
+
+  <script>
+    const reportForm = document.getElementById('reportForm');
+    const reportList = document.getElementById('reportList');
+
+    function loadReports() {
+      fetch('/api/reports')
+        .then(res => res.json())
+        .then(data => {
+          reportList.innerHTML = '';
+          data.forEach(r => {
+            const div = document.createElement('div');
+            div.classList.add('report');
+            div.innerHTML = `<strong>${r.type}</strong><p>${r.description}</p>`;
+            reportList.appendChild(div);
+          });
+        });
+    }
+
+    reportForm.addEventListener('submit', e => {
+      e.preventDefault();
+      const type = document.getElementById('type').value;
+      const description = document.getElementById('description').value;
+
+      fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, description })
+      })
+      .then(res => res.json())
+      .then(() => {
+        reportForm.reset();
+        loadReports();
+      });
+    });
+
+    window.onload = loadReports;
+  </script>
+</body>
+</html>
