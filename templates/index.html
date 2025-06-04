@@ -1,10 +1,137 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Title</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Neighborhood Watch</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
 </head>
-<body>
+<body class="bg-light">
+  <div class="container py-4">
+    <h1 class="mb-4">Neighborhood Watch</h1>
 
+    <!-- ZIP Code input form -->
+    <form id="zipForm" class="mb-4">
+      <div class="input-group">
+        <input type="text" id="zipInput" class="form-control" placeholder="Enter your ZIP code" required />
+        <button class="btn btn-primary" type="submit">Load Reports</button>
+      </div>
+    </form>
+
+    <!-- Section shown after ZIP is entered -->
+    <div id="zipSection" style="display:none;">
+      <h4 class="mb-3">Reports for ZIP: <span id="currentZip"></span></h4>
+
+      <!-- New report form -->
+      <form id="reportForm" class="mb-4">
+        <input type="text" id="title" class="form-control mb-2" placeholder="Title" required />
+        <textarea id="description" class="form-control mb-2" placeholder="Description" required></textarea>
+        <input type="text" id="type" class="form-control mb-2" placeholder="Type (e.g., safety, lost item)" required />
+        <input type="email" id="email" class="form-control mb-2" placeholder="Your Email (for updates)" required />
+        <button class="btn btn-success" type="submit">Submit Report</button>
+      </form>
+
+      <!-- List of reports -->
+      <div id="reportList"></div>
+    </div>
+  </div>
+
+  <script>
+    let currentZip = "";
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const zipForm = document.getElementById("zipForm");
+      const zipInput = document.getElementById("zipInput");
+      const zipSection = document.getElementById("zipSection");
+      const currentZipSpan = document.getElementById("currentZip");
+      const reportForm = document.getElementById("reportForm");
+      const reportList = document.getElementById("reportList");
+
+      async function loadReports() {
+        try {
+          const response = await fetch(`/api/reports?zip_code=${currentZip}`);
+          if (!response.ok) throw new Error("Failed to fetch reports.");
+          const reports = await response.json();
+          reportList.innerHTML = "";
+
+          if (reports.length === 0) {
+            reportList.innerHTML = "<p>No active reports for this ZIP code.</p>";
+            return;
+          }
+
+          reports.forEach(report => {
+            if (!report.resolved) {
+              const div = document.createElement("div");
+              div.className = "card mb-2";
+              div.innerHTML = `
+                <div class="card-body">
+                  <h5 class="card-title">${report.title}</h5>
+                  <p class="card-text">${report.description}</p>
+                  <small class="text-muted">Type: ${report.type}</small><br/>
+                  <button class="btn btn-sm btn-outline-success mt-2" onclick="resolveReport(${report.id})">Mark as Resolved</button>
+                </div>
+              `;
+              reportList.appendChild(div);
+            }
+          });
+        } catch (err) {
+          console.error(err);
+          alert("Error loading reports.");
+        }
+      }
+
+      zipForm.addEventListener("submit", e => {
+        e.preventDefault();
+        currentZip = zipInput.value.trim();
+        if (!currentZip) return;
+        currentZipSpan.textContent = currentZip;
+        zipSection.style.display = "block";
+        loadReports();
+      });
+
+      reportForm.addEventListener("submit", async e => {
+        e.preventDefault();
+
+        const title = document.getElementById("title").value.trim();
+        const description = document.getElementById("description").value.trim();
+        const type = document.getElementById("type").value.trim();
+        const email = document.getElementById("email").value.trim();
+
+        if (!title || !description || !type || !email || !currentZip) return;
+
+        try {
+          const response = await fetch("/api/reports", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title, description, type, email, zip_code: currentZip })
+          });
+
+          if (response.ok) {
+            reportForm.reset();
+            loadReports();
+          } else {
+            throw new Error("Submission failed");
+          }
+        } catch (err) {
+          console.error(err);
+          alert("Error submitting report.");
+        }
+      });
+
+      window.resolveReport = async function (id) {
+        try {
+          const response = await fetch(`/api/reports/${id}/resolve`, { method: "PATCH" });
+          if (response.ok) {
+            loadReports();
+          } else {
+            throw new Error("Failed to resolve report.");
+          }
+        } catch (err) {
+          console.error(err);
+          alert("Failed to resolve the report.");
+        }
+      };
+    });
+  </script>
 </body>
 </html>
