@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Neighborhood Watch</title>
+  <title>Neighborhood Watch - Area Reports</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -10,57 +10,95 @@
     <h1>Neighborhood Watch</h1>
 
     <form id="reportForm">
-      <select name="type" id="type" required>
+      <input type="text" id="zip" placeholder="Enter ZIP Code" required pattern="\\d{5}" />
+      <select id="type" required>
         <option value="">Select Type</option>
         <option value="Safety Concern">Safety Concern</option>
         <option value="Lost Item">Lost Item</option>
         <option value="Suspicious Activity">Suspicious Activity</option>
       </select>
-      <textarea name="description" id="description" placeholder="Describe the issue..." required></textarea>
+      <textarea id="description" placeholder="Describe the issue..." required></textarea>
       <button type="submit">Submit</button>
     </form>
 
     <hr />
-    <h2>Reports</h2>
+    <h2>Filter Reports by ZIP Code</h2>
+    <input type="text" id="filterZip" placeholder="ZIP Code to filter" />
+    <button onclick="loadReports()">Filter</button>
+
+    <hr />
+    <h2>Reports Grouped by Area</h2>
     <div id="reportList"></div>
   </div>
 
   <script>
     const reportForm = document.getElementById('reportForm');
     const reportList = document.getElementById('reportList');
+    const filterZip = document.getElementById('filterZip');
 
     function loadReports() {
-      fetch('/api/reports')
+      const zip = filterZip.value.trim();
+      const url = zip ? `/api/reports?zip=${zip}` : '/api/reports';
+
+      fetch(url)
         .then(res => res.json())
         .then(data => {
           reportList.innerHTML = '';
-          data.forEach(r => {
-            const div = document.createElement('div');
-            div.classList.add('report');
-            div.innerHTML = `<strong>${r.type}</strong><p>${r.description}</p>`;
-            reportList.appendChild(div);
+
+          if (data.length === 0) {
+            reportList.innerHTML = '<p>No reports found for this ZIP code.</p>';
+            return;
+          }
+
+          const grouped = {};
+
+          // Group reports by ZIP
+          data.forEach(report => {
+            const z = report.zip;
+            if (!grouped[z]) {
+              grouped[z] = [];
+            }
+            grouped[z].push(report);
           });
+
+          for (const zip in grouped) {
+            const section = document.createElement('div');
+            section.innerHTML = `<h3>Area: ${zip}</h3>`;
+
+            grouped[zip].forEach(r => {
+              const div = document.createElement('div');
+              div.className = 'report';
+              div.innerHTML = `<strong>${r.type}</strong><p>${r.description}</p>`;
+              section.appendChild(div);
+            });
+
+            reportList.appendChild(section);
+          }
         });
     }
 
     reportForm.addEventListener('submit', e => {
       e.preventDefault();
+      const zip = document.getElementById('zip').value;
       const type = document.getElementById('type').value;
       const description = document.getElementById('description').value;
 
       fetch('/api/reports', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, description })
+        body: JSON.stringify({ zip, type, description })
       })
       .then(res => res.json())
       .then(() => {
         reportForm.reset();
+        filterZip.value = zip;
         loadReports();
       });
     });
 
-    window.onload = loadReports;
+    window.onload = () => {
+      loadReports();
+    };
   </script>
 </body>
 </html>
