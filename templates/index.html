@@ -2,114 +2,118 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Neighborhood Watch</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Report Dashboard</title>
   <style>
-    /* Basic optional styling */
-    .container { max-width: 600px; margin: auto; padding: 20px; }
-    input, select, textarea, button { width: 100%; padding: 10px; margin-bottom: 10px; }
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    input, button, select { margin: 5px; padding: 5px; }
     .report { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
-    .error { color: red; }
+    .resolved { background-color: #e0ffe0; }
+    .unresolved { background-color: #ffe0e0; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>Neighborhood Watch</h1>
+  <h1>Community Reports</h1>
 
-    <form id="reportForm">
-      <select name="type" id="type" required>
-        <option value="">Select Type</option>
-        <option value="Safety Concern">Safety Concern</option>
-        <option value="Lost Item">Lost Item</option>
-        <option value="Suspicious Activity">Suspicious Activity</option>
-      </select>
+  <form id="reportForm">
+    <input type="text" name="type" placeholder="Type" required />
+    <input type="text" name="description" placeholder="Description" required />
+    <input type="text" name="zip" placeholder="ZIP Code" required />
+    <input type="email" name="email" placeholder="Your Email" required />
+    <input type="tel" name="phone" placeholder="Phone" required />
+    <button type="submit">Submit Report</button>
+  </form>
 
-      <textarea name="description" id="description" placeholder="Describe the issue..." required></textarea>
+  <hr>
 
-      <input type="text" id="zip" name="zip" placeholder="Enter ZIP Code" required pattern="\d{5}" />
+  <h2>Reports</h2>
+  <div id="reports"></div>
 
-      <input type="email" id="email" name="email" placeholder="Enter your email" required />
+  <hr>
 
-      <button type="submit">Submit</button>
-      <p class="error" id="formError"></p>
-    </form>
-
-    <hr />
-    <h2>Reports</h2>
-
-    <input type="text" id="zipFilter" placeholder="Filter by ZIP code" />
-    <button onclick="loadReports()">Filter</button>
-
-    <div id="reportList"></div>
-  </div>
+  <h2>Admin Login</h2>
+  <form id="adminLoginForm">
+    <input type="text" name="username" placeholder="Admin Username" required />
+    <input type="text" name="token" placeholder="2FA Token" required />
+    <button type="submit">Login</button>
+  </form>
+  <button onclick="logoutAdmin()">Logout Admin</button>
 
   <script>
-    const reportForm = document.getElementById('reportForm');
-    const reportList = document.getElementById('reportList');
-    const zipFilter = document.getElementById('zipFilter');
-    const formError = document.getElementById('formError');
+    const form = document.getElementById('reportForm');
+    const reportContainer = document.getElementById('reports');
+    const adminForm = document.getElementById('adminLoginForm');
 
-    function loadReports() {
-      const zip = zipFilter.value.trim();
-      const url = zip ? `/api/reports?zip=${zip}` : '/api/reports';
-
-      fetch(url)
-        .then(res => res.json())
-        .then(data => {
-          reportList.innerHTML = '';
-          if (data.length === 0) {
-            reportList.innerHTML = '<p>No reports found for this ZIP code.</p>';
-            return;
-          }
-
-          data.forEach(r => {
-            const div = document.createElement('div');
-            div.classList.add('report');
-            div.innerHTML = `
-              <strong>${r.type}</strong>
-              <p>${r.description}</p>
-              <small><strong>ZIP:</strong> ${r.zip} | <strong>Email:</strong> ${r.email}</small>
-            `;
-            reportList.appendChild(div);
-          });
-        });
-    }
-
-    reportForm.addEventListener('submit', e => {
+    form.addEventListener('submit', async e => {
       e.preventDefault();
-      formError.textContent = ''; // Clear previous errors
-
-      const type = document.getElementById('type').value;
-      const description = document.getElementById('description').value;
-      const zip = document.getElementById('zip').value.trim();
-      const email = document.getElementById('email').value.trim();
-
-      // Basic client-side validation (ZIP and email already have HTML5 constraints)
-      if (!/^\d{5}$/.test(zip)) {
-        formError.textContent = 'Invalid ZIP code.';
-        return;
-      }
-
-      fetch('/api/reports', {
+      const data = Object.fromEntries(new FormData(form));
+      const res = await fetch('/api/reports', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, description, zip, email })
-      })
-      .then(res => res.json().then(data => ({ status: res.status, data })))
-      .then(({ status, data }) => {
-        if (status !== 201) {
-          formError.textContent = data.error || 'Submission failed.';
-        } else {
-          reportForm.reset();
-          loadReports();
-        }
-      })
-      .catch(() => {
-        formError.textContent = 'An error occurred while submitting the report.';
+        body: JSON.stringify(data)
       });
+      if (res.ok) {
+        alert('Report submitted');
+        form.reset();
+        loadReports();
+      } else {
+        const err = await res.json();
+        alert(err.error);
+      }
     });
 
-    window.onload = loadReports;
+    adminForm.addEventListener('submit', async e => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(adminForm));
+      const res = await fetch('/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (res.ok) {
+        alert('Admin logged in');
+        loadReports();
+      } else {
+        alert('Login failed');
+      }
+    });
+
+    async function logoutAdmin() {
+      await fetch('/admin/logout', { method: 'POST' });
+      alert('Logged out');
+      loadReports();
+    }
+
+    async function loadReports() {
+      const res = await fetch('/api/reports');
+      const reports = await res.json();
+      reportContainer.innerHTML = '';
+      reports.forEach(report => {
+        const div = document.createElement('div');
+        div.className = `report ${report.resolved ? 'resolved' : 'unresolved'}`;
+        div.innerHTML = `
+          <strong>${report.type}</strong><br>
+          ${report.description}<br>
+          ZIP: ${report.zip}<br>
+          <a href="mailto:${report.email}">${report.email}</a><br>
+          <a href="tel:${report.phone}">${report.phone}</a><br>
+          <b>Status:</b> ${report.resolved ? 'Resolved' : 'Unresolved'}<br>
+          ${!report.resolved ? `<button onclick="resolve(${report.id})">Mark as Resolved</button>` : ''}
+        `;
+        reportContainer.appendChild(div);
+      });
+    }
+
+    async function resolve(id) {
+      const res = await fetch(`/api/resolve/${id}`, {
+        method: 'POST'
+      });
+      const msg = await res.json();
+      alert(msg.message || msg.error);
+      loadReports();
+    }
+
+    loadReports();
   </script>
 </body>
 </html>
