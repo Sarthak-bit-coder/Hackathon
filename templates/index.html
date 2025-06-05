@@ -2,103 +2,114 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Neighborhood Watch - Area Reports</title>
+  <title>Neighborhood Watch</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    /* Basic optional styling */
+    .container { max-width: 600px; margin: auto; padding: 20px; }
+    input, select, textarea, button { width: 100%; padding: 10px; margin-bottom: 10px; }
+    .report { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+    .error { color: red; }
+  </style>
 </head>
 <body>
   <div class="container">
     <h1>Neighborhood Watch</h1>
 
     <form id="reportForm">
-      <input type="text" id="zip" placeholder="Enter ZIP Code" required pattern="\\d{5}" />
-      <select id="type" required>
+      <select name="type" id="type" required>
         <option value="">Select Type</option>
         <option value="Safety Concern">Safety Concern</option>
         <option value="Lost Item">Lost Item</option>
         <option value="Suspicious Activity">Suspicious Activity</option>
       </select>
-      <textarea id="description" placeholder="Describe the issue..." required></textarea>
+
+      <textarea name="description" id="description" placeholder="Describe the issue..." required></textarea>
+
+      <input type="text" id="zip" name="zip" placeholder="Enter ZIP Code" required pattern="\d{5}" />
+
+      <input type="email" id="email" name="email" placeholder="Enter your email" required />
+
       <button type="submit">Submit</button>
+      <p class="error" id="formError"></p>
     </form>
 
     <hr />
-    <h2>Filter Reports by ZIP Code</h2>
-    <input type="text" id="filterZip" placeholder="ZIP Code to filter" />
+    <h2>Reports</h2>
+
+    <input type="text" id="zipFilter" placeholder="Filter by ZIP code" />
     <button onclick="loadReports()">Filter</button>
 
-    <hr />
-    <h2>Reports Grouped by Area</h2>
     <div id="reportList"></div>
   </div>
 
   <script>
     const reportForm = document.getElementById('reportForm');
     const reportList = document.getElementById('reportList');
-    const filterZip = document.getElementById('filterZip');
+    const zipFilter = document.getElementById('zipFilter');
+    const formError = document.getElementById('formError');
 
     function loadReports() {
-      const zip = filterZip.value.trim();
+      const zip = zipFilter.value.trim();
       const url = zip ? `/api/reports?zip=${zip}` : '/api/reports';
 
       fetch(url)
         .then(res => res.json())
         .then(data => {
           reportList.innerHTML = '';
-
           if (data.length === 0) {
             reportList.innerHTML = '<p>No reports found for this ZIP code.</p>';
             return;
           }
 
-          const grouped = {};
-
-          // Group reports by ZIP
-          data.forEach(report => {
-            const z = report.zip;
-            if (!grouped[z]) {
-              grouped[z] = [];
-            }
-            grouped[z].push(report);
+          data.forEach(r => {
+            const div = document.createElement('div');
+            div.classList.add('report');
+            div.innerHTML = `
+              <strong>${r.type}</strong>
+              <p>${r.description}</p>
+              <small><strong>ZIP:</strong> ${r.zip} | <strong>Email:</strong> ${r.email}</small>
+            `;
+            reportList.appendChild(div);
           });
-
-          for (const zip in grouped) {
-            const section = document.createElement('div');
-            section.innerHTML = `<h3>Area: ${zip}</h3>`;
-
-            grouped[zip].forEach(r => {
-              const div = document.createElement('div');
-              div.className = 'report';
-              div.innerHTML = `<strong>${r.type}</strong><p>${r.description}</p>`;
-              section.appendChild(div);
-            });
-
-            reportList.appendChild(section);
-          }
         });
     }
 
     reportForm.addEventListener('submit', e => {
       e.preventDefault();
-      const zip = document.getElementById('zip').value;
+      formError.textContent = ''; // Clear previous errors
+
       const type = document.getElementById('type').value;
       const description = document.getElementById('description').value;
+      const zip = document.getElementById('zip').value.trim();
+      const email = document.getElementById('email').value.trim();
+
+      // Basic client-side validation (ZIP and email already have HTML5 constraints)
+      if (!/^\d{5}$/.test(zip)) {
+        formError.textContent = 'Invalid ZIP code.';
+        return;
+      }
 
       fetch('/api/reports', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ zip, type, description })
+        body: JSON.stringify({ type, description, zip, email })
       })
-      .then(res => res.json())
-      .then(() => {
-        reportForm.reset();
-        filterZip.value = zip;
-        loadReports();
+      .then(res => res.json().then(data => ({ status: res.status, data })))
+      .then(({ status, data }) => {
+        if (status !== 201) {
+          formError.textContent = data.error || 'Submission failed.';
+        } else {
+          reportForm.reset();
+          loadReports();
+        }
+      })
+      .catch(() => {
+        formError.textContent = 'An error occurred while submitting the report.';
       });
     });
 
-    window.onload = () => {
-      loadReports();
-    };
+    window.onload = loadReports;
   </script>
 </body>
 </html>
