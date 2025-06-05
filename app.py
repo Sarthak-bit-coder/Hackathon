@@ -18,8 +18,10 @@ EMAIL_REGEX = re.compile(r"[^@]+@[^@]+\.[^@]+")
 
 # Admins
 ADMINS = {
-    "admin1": pyotp.TOTP("JBSWY3DPEHPK3PXP"),
-    "admin2": pyotp.TOTP("KZXW6YTBMFWWKZLU")
+    "Sarthak": "JBSWY3DPEHPK3PXP",
+    "Ayesha": "KZXW6YTBMFWWKZLU",
+    "Shubham": "MFRGGZDFMZTWQ2LK",
+    "Anav": "ONSWG4TFOQYTEMY="
 }
 
 # ------------------- Models -------------------
@@ -91,18 +93,21 @@ def delete_report(id):
     if not session.get('admin'):
         return jsonify({"error": "Unauthorized"}), 401
     report = Report.query.get(id)
-    if report:
-        db.session.delete(report)
-        db.session.commit()
-        return jsonify({"message": "Deleted"}), 200
-    return jsonify({"error": "Not found"}), 404
-
+    if not report:
+        return jsonify({"error": "Not found"}), 404
+    if not report.resolved:
+        return jsonify({"error": "Cannot delete unresolved report"}), 403
+    db.session.delete(report)
+    db.session.commit()
+    return jsonify({"message": "Deleted"}), 200
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
     data = request.json
     username = data.get("username")
     token = data.get("token")
-    if username in ADMINS and ADMINS[username].verify(token):
+
+    secret = ADMINS.get(username)
+    if secret and pyotp.TOTP(secret).verify(token):
         session['admin'] = username
         return jsonify({"message": f"Logged in as {username}"}), 200
     return jsonify({"error": "Unauthorized"}), 401

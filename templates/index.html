@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Report Dashboard</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
@@ -27,6 +27,7 @@
   <hr>
 
   <h2>Reports</h2>
+  <div id="message" style="color: red; font-weight: bold;"></div>
   <div id="reports"></div>
 
   <hr>
@@ -43,6 +44,9 @@
     const form = document.getElementById('reportForm');
     const reportContainer = document.getElementById('reports');
     const adminForm = document.getElementById('adminLoginForm');
+    const msgDiv = document.getElementById("message");
+
+    let isAdmin = false;
 
     form.addEventListener('submit', async e => {
       e.preventDefault();
@@ -72,6 +76,7 @@
       });
       if (res.ok) {
         alert('Admin logged in');
+        isAdmin = true;
         loadReports();
       } else {
         alert('Login failed');
@@ -80,6 +85,7 @@
 
     async function logoutAdmin() {
       await fetch('/admin/logout', { method: 'POST' });
+      isAdmin = false;
       alert('Logged out');
       loadReports();
     }
@@ -88,6 +94,8 @@
       const res = await fetch('/api/reports');
       const reports = await res.json();
       reportContainer.innerHTML = '';
+      msgDiv.textContent = '';
+
       reports.forEach(report => {
         const div = document.createElement('div');
         div.className = `report ${report.resolved ? 'resolved' : 'unresolved'}`;
@@ -99,18 +107,29 @@
           <a href="tel:${report.phone}">${report.phone}</a><br>
           <b>Status:</b> ${report.resolved ? 'Resolved' : 'Unresolved'}<br>
           ${!report.resolved ? `<button onclick="resolve(${report.id})">Mark as Resolved</button>` : ''}
+          ${isAdmin && report.resolved ? `<button onclick="deleteReport(${report.id})">Delete</button>` : ''}
         `;
         reportContainer.appendChild(div);
       });
     }
 
     async function resolve(id) {
-      const res = await fetch(`/api/resolve/${id}`, {
-        method: 'POST'
-      });
+      const res = await fetch(`/api/resolve/${id}`, { method: 'POST' });
       const msg = await res.json();
       alert(msg.message || msg.error);
       loadReports();
+    }
+
+    async function deleteReport(id) {
+      const res = await fetch(`/api/reports/${id}`, { method: 'DELETE' });
+      const result = await res.json();
+      if (res.status === 200) {
+        msgDiv.textContent = "Report deleted.";
+        loadReports();
+      } else {
+        msgDiv.textContent = result.error || "You can only delete resolved reports.";
+      }
+      setTimeout(() => { msgDiv.textContent = ''; }, 3000);
     }
 
     loadReports();
