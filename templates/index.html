@@ -13,17 +13,19 @@
     .unresolved { background-color: #ffe0e0; }
     #map { height: 300px; margin: 10px 0; transition: height 0.3s ease; }
     .small-map { height: 200px !important; }
+    .report img { max-width: 100%; max-height: 200px; margin-top: 10px; display: block; }
   </style>
 </head>
 <body>
   <h1>Community Reports</h1>
 
-  <form id="reportForm">
+  <form id="reportForm" enctype="multipart/form-data">
     <input type="text" name="type" placeholder="Type" required />
     <input type="text" name="description" placeholder="Description" required />
     <input type="text" name="zip" placeholder="ZIP Code" required />
     <input type="email" name="email" placeholder="Your Email" required />
     <input type="tel" name="phone" placeholder="Phone" required />
+    <input type="file" name="image" accept="image/*" />
     <input type="hidden" name="lat" id="lat" required />
     <input type="hidden" name="lng" id="lng" required />
     <div id="map"></div>
@@ -31,10 +33,11 @@
   </form>
 
   <hr>
-  <h2>Reports</h2>
   <label for="zipFilter">Filter by ZIP:</label>
   <input type="text" id="zipFilter" placeholder="Enter ZIP code" />
   <button onclick="loadReports()">Apply Filter</button>
+
+  <h2>Reports</h2>
   <div id="message" style="color: red; font-weight: bold;"></div>
   <div id="reports"></div>
 
@@ -78,51 +81,29 @@
       updateLatLngFields(e.latlng.lat, e.latlng.lng);
     });
 
-    async function geocodeZip(zip) {
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?postalcode=${zip}&format=json&countrycodes=us`);
-      const results = await response.json();
-      if (results.length > 0) {
-        return {
-          lat: parseFloat(results[0].lat),
-          lng: parseFloat(results[0].lon)
-        };
-      }
-      return null;
-    }
-
-    const descriptionInput = form.querySelector('input[name="description"]');
-    descriptionInput.addEventListener('input', async () => {
-      const zipMatch = descriptionInput.value.match(/\b\d{5}\b/);
-      if (zipMatch) {
-        const location = await geocodeZip(zipMatch[0]);
-        if (location) {
-          marker.setLatLng([location.lat, location.lng]);
-          map.setView([location.lat, location.lng], 15);
-          updateLatLngFields(location.lat, location.lng);
-        }
+    document.querySelector('input[name="zip"]').addEventListener('blur', async (e) => {
+      const zip = e.target.value.trim();
+      const coords = await geocodeZip(zip);
+      if (coords) {
+        map.setView([coords.lat, coords.lng], 16);
+        marker.setLatLng([coords.lat, coords.lng]);
+        updateLatLngFields(coords.lat, coords.lng);
       }
     });
 
     form.addEventListener('submit', async e => {
       e.preventDefault();
       const formData = new FormData(form);
-      const data = Object.fromEntries(formData.entries());
-      data.lat = parseFloat(data.lat);
-      data.lng = parseFloat(data.lng);
 
       const res = await fetch('/api/reports', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        body: formData
       });
 
       if (res.ok) {
         alert('Report submitted');
         loadReports();
-        form.querySelectorAll('input:not([type=hidden])').forEach(input => input.value = '');
-        marker.setLatLng([data.lat, data.lng]);
-        updateLatLngFields(data.lat, data.lng);
-        map.setView([data.lat, data.lng], 17);
+        form.reset();
         document.getElementById('map').classList.add('small-map');
       } else {
         const err = await res.json();
@@ -179,7 +160,6 @@
     async function loadReports() {
       const res = await fetch('/api/reports');
       const reports = await res.json();
-
       const zipFilter = document.getElementById('zipFilter').value.trim();
       reportContainer.innerHTML = '';
       msgDiv.textContent = '';
@@ -195,6 +175,7 @@
             ZIP: ${report.zip}<br>
             <a href="https://mail.google.com/mail/?view=cm&fs=1&to=${report.email}" target="_blank" rel="noopener noreferrer">${report.email}</a><br>
             <a href="tel:${report.phone}">${report.phone}</a><br>
+            ${report.imageUrl ? `<img src="${report.imageUrl}" alt="Report Image">` : ''}
             <b>Status:</b> ${report.resolved ? 'Resolved' : 'Unresolved'}<br>
             ${report.lat && report.lng ? `<div class="mini-map" id="map-${report.id}" style="height: 200px;"></div>` : ''}
             ${!report.resolved ? `<button onclick="resolve(${report.id})">Mark as Resolved</button>` : ''}
@@ -212,6 +193,18 @@
             });
           }
         });
+    }
+
+    async function geocodeZip(zip) {
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?postalcode=${zip}&format=json&countrycodes=us`);
+      const results = await response.json();
+      if (results.length > 0) {
+        return {
+          lat: parseFloat(results[0].lat),
+          lng: parseFloat(results[0].lon)
+        };
+      }
+      return null;
     }
 
     loadReports();
