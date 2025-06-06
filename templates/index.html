@@ -4,12 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Report Dashboard</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
     input, button, select { margin: 5px; padding: 5px; }
     .report { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
     .resolved { background-color: #e0ffe0; }
     .unresolved { background-color: #ffe0e0; }
+    #map { height: 300px; margin: 10px 0; transition: height 0.3s ease; }
+    .small-map { height: 200px !important; }
   </style>
 </head>
 <body>
@@ -21,17 +24,21 @@
     <input type="text" name="zip" placeholder="ZIP Code" required />
     <input type="email" name="email" placeholder="Your Email" required />
     <input type="tel" name="phone" placeholder="Phone" required />
+    <input type="hidden" name="lat" id="lat" required />
+    <input type="hidden" name="lng" id="lng" required />
+    <div id="map"></div>
     <button type="submit">Submit Report</button>
   </form>
 
   <hr>
-
   <h2>Reports</h2>
+  <label for="zipFilter">Filter by ZIP:</label>
+  <input type="text" id="zipFilter" placeholder="Enter ZIP code" />
+  <button onclick="loadReports()">Apply Filter</button>
   <div id="message" style="color: red; font-weight: bold;"></div>
   <div id="reports"></div>
 
   <hr>
-
   <h2>Admin Login</h2>
   <form id="adminLoginForm">
     <input type="text" name="username" placeholder="Admin Username" required />
@@ -40,29 +47,86 @@
   </form>
   <button onclick="logoutAdmin()">Logout Admin</button>
 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     const form = document.getElementById('reportForm');
     const reportContainer = document.getElementById('reports');
     const adminForm = document.getElementById('adminLoginForm');
     const msgDiv = document.getElementById("message");
-
     let isAdmin = false;
+
+    const map = L.map('map').setView([37.7749, -122.4194], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: 'Map data © <a href="https://openstreetmap.org">OpenStreetMap</a> contributors'
+    }).addTo(map);
+    const marker = L.marker([37.7749, -122.4194], { draggable: true }).addTo(map);
+
+    function updateLatLngFields(lat, lng) {
+      document.getElementById('lat').value = lat;
+      document.getElementById('lng').value = lng;
+    }
+
+    updateLatLngFields(marker.getLatLng().lat, marker.getLatLng().lng);
+
+    marker.on('dragend', function (e) {
+      const { lat, lng } = e.target.getLatLng();
+      updateLatLngFields(lat, lng);
+    });
+
+    map.on('click', function (e) {
+      marker.setLatLng(e.latlng);
+      updateLatLngFields(e.latlng.lat, e.latlng.lng);
+    });
+
+    async function geocodeZip(zip) {
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?postalcode=${zip}&format=json&countrycodes=us`);
+      const results = await response.json();
+      if (results.length > 0) {
+        return {
+          lat: parseFloat(results[0].lat),
+          lng: parseFloat(results[0].lon)
+        };
+      }
+      return null;
+    }
+
+    const descriptionInput = form.querySelector('input[name="description"]');
+    descriptionInput.addEventListener('input', async () => {
+      const zipMatch = descriptionInput.value.match(/\b\d{5}\b/);
+      if (zipMatch) {
+        const location = await geocodeZip(zipMatch[0]);
+        if (location) {
+          marker.setLatLng([location.lat, location.lng]);
+          map.setView([location.lat, location.lng], 15);
+          updateLatLngFields(location.lat, location.lng);
+        }
+      }
+    });
 
     form.addEventListener('submit', async e => {
       e.preventDefault();
-      const data = Object.fromEntries(new FormData(form));
+      const formData = new FormData(form);
+      const data = Object.fromEntries(formData.entries());
+      data.lat = parseFloat(data.lat);
+      data.lng = parseFloat(data.lng);
+
       const res = await fetch('/api/reports', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       });
+
       if (res.ok) {
         alert('Report submitted');
-        form.reset();
         loadReports();
+        form.querySelectorAll('input:not([type=hidden])').forEach(input => input.value = '');
+        marker.setLatLng([data.lat, data.lng]);
+        updateLatLngFields(data.lat, data.lng);
+        map.setView([data.lat, data.lng], 17);
+        document.getElementById('map').classList.add('small-map');
       } else {
         const err = await res.json();
-        alert(err.error);
+        alert(err.error || 'Error submitting report');
       }
     });
 
@@ -90,46 +154,64 @@
       loadReports();
     }
 
-    async function loadReports() {
-      const res = await fetch('/api/reports');
-      const reports = await res.json();
-      reportContainer.innerHTML = '';
-      msgDiv.textContent = '';
-
-      reports.forEach(report => {
-        const div = document.createElement('div');
-        div.className = `report ${report.resolved ? 'resolved' : 'unresolved'}`;
-        div.innerHTML = `
-          <strong>${report.type}</strong><br>
-          ${report.description}<br>
-          ZIP: ${report.zip}<br>
-          <a href="mailto:${report.email}">${report.email}</a><br>
-          <a href="tel:${report.phone}">${report.phone}</a><br>
-          <b>Status:</b> ${report.resolved ? 'Resolved' : 'Unresolved'}<br>
-          ${!report.resolved ? `<button onclick="resolve(${report.id})">Mark as Resolved</button>` : ''}
-          ${isAdmin && report.resolved ? `<button onclick="deleteReport(${report.id})">Delete</button>` : ''}
-        `;
-        reportContainer.appendChild(div);
-      });
-    }
-
     async function resolve(id) {
       const res = await fetch(`/api/resolve/${id}`, { method: 'POST' });
-      const msg = await res.json();
-      alert(msg.message || msg.error);
-      loadReports();
+      if (res.ok) {
+        alert("Marked as resolved.");
+        loadReports();
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to resolve');
+      }
     }
 
     async function deleteReport(id) {
       const res = await fetch(`/api/reports/${id}`, { method: 'DELETE' });
-      const result = await res.json();
-      if (res.status === 200) {
-        msgDiv.textContent = "Report deleted.";
+      if (res.ok) {
+        alert("Report deleted.");
         loadReports();
       } else {
-        msgDiv.textContent = result.error || "You can only delete resolved reports.";
+        const err = await res.json();
+        alert(err.error || 'Failed to delete');
       }
-      setTimeout(() => { msgDiv.textContent = ''; }, 3000);
+    }
+
+    async function loadReports() {
+      const res = await fetch('/api/reports');
+      const reports = await res.json();
+
+      const zipFilter = document.getElementById('zipFilter').value.trim();
+      reportContainer.innerHTML = '';
+      msgDiv.textContent = '';
+
+      reports
+        .filter(report => !zipFilter || report.zip === zipFilter)
+        .forEach(report => {
+          const div = document.createElement('div');
+          div.className = `report ${report.resolved ? 'resolved' : 'unresolved'}`;
+          div.innerHTML = `
+            <strong>${report.type}</strong><br>
+            ${report.description}<br>
+            ZIP: ${report.zip}<br>
+            <a href="https://mail.google.com/mail/?view=cm&fs=1&to=${report.email}" target="_blank" rel="noopener noreferrer">${report.email}</a><br>
+            <a href="tel:${report.phone}">${report.phone}</a><br>
+            <b>Status:</b> ${report.resolved ? 'Resolved' : 'Unresolved'}<br>
+            ${report.lat && report.lng ? `<div class="mini-map" id="map-${report.id}" style="height: 200px;"></div>` : ''}
+            ${!report.resolved ? `<button onclick="resolve(${report.id})">Mark as Resolved</button>` : ''}
+            ${isAdmin && report.resolved ? `<button onclick="deleteReport(${report.id})">Delete</button>` : ''}
+          `;
+          reportContainer.appendChild(div);
+
+          if (report.lat && report.lng) {
+            requestAnimationFrame(() => {
+              const miniMap = L.map(`map-${report.id}`).setView([report.lat, report.lng], 17);
+              L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap'
+              }).addTo(miniMap);
+              L.marker([report.lat, report.lng]).addTo(miniMap);
+            });
+          }
+        });
     }
 
     loadReports();
