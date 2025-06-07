@@ -5,9 +5,18 @@ from flask_sqlalchemy import SQLAlchemy
 import pyotp
 import re
 import os
+from flask_mail import Mail, Message
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+app.config.update(
+    MAIL_SERVER='smtp.gmail.com',
+    MAIL_PORT=587,
+    MAIL_USE_TLS=True,
+    MAIL_USERNAME='your_email@gmail.com',       # <-- Replace this
+    MAIL_PASSWORD='your_email_password',        # <-- Replace this
+)
+mail = Mail(app)
 app.secret_key = 'supersecretkey'
 app.config['SESSION_TYPE'] = 'filesystem'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///reports.db'
@@ -46,10 +55,20 @@ class Report(db.Model):
     lng = db.Column(db.Float, nullable=True)
     image_url = db.Column(db.String(300), nullable=True)
 
+    class User(db.Model):
+        id = db.Column(db.Integer, primary_key=True)
+        name = db.Column(db.String(120), nullable=False)
+        email = db.Column(db.String(120), unique=True, nullable=False)
+        zip = db.Column(db.String(10), nullable=True)
+
+        def __repr__(self):
+            return f'<User {self.email}>'
 @app.route('/')
 def home():
     return render_template('index.html')
-
+@app.route('/login')
+def login_page():
+    return render_template('login.html')
 @app.route('/api/reports', methods=['GET'])
 def get_reports():
     zip_code = request.args.get('zip')
@@ -111,6 +130,28 @@ def post_report():
     db.session.add(report)
     db.session.commit()
     print(f"[DEBUG] Report saved with ID: {report.id}")
+    # Notify users in the same ZIP code
+    matching_users = User.query.filter_by(zip=data['zip']).all()
+    for user in matching_users:
+        try:
+            msg = Message(
+                subject=f"Alert: {data['type']} in your area!",
+                sender="your_email@gmail.com",  # Same as configured above
+                recipients=[user.email],
+                body=f"""Hey {user.name},
+
+    There is a {data['type']} reported in your area ({data['zip']}).
+
+    Details:
+    {data['description']}
+
+    Stay safe,
+    Your Community Safety Team
+    """
+            )
+            mail.send(msg)
+        except Exception as e:
+            print(f"[ERROR] Failed to send email to {user.email}: {e}")
     return jsonify({"message": "Report submitted", "id": report.id}), 201
 
 @app.route('/api/resolve/<int:id>', methods=['POST'])
@@ -164,6 +205,33 @@ def admin_login():
 def admin_logout():
     session.pop('admin', None)
     return jsonify({"message": "Logged out"}), 200
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json
+    email = data.get("email")
+    user = User.query.filter_by(email=email).first()
+    if user:
+        session["user_email"] = email
+        return jsonify({"message": "Logged in"}), 200
+    return jsonify({"error": "User not found"}), 404
+@app.route('/signup', methods=['GET', 'POST'])
+def signup_page():
+    if request.method == 'POST':
+        name = request.form.get('name')
+        email = request.form.get('email')
+        zip_code = request.form.get('zip')
+
+        if not name or not email or not zip_code:
+            return "Missing fields", 400
+
+        new_user = User(name=name, email=email, zip=zip_code)
+        db.session.add(new_user)
+        db.session.commit()
+
+        return ('/')  # or redirect to login or dashboard
+
+    return render_template('signup.html')  # GET method will render the form
+
 
 @app.before_request
 def create_tables():

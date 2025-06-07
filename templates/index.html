@@ -17,6 +17,10 @@
   </style>
 </head>
 <body>
+<nav style="margin-bottom: 20px;">
+  <a href="{{ url_for('login_page') }}"><button>Login</button></a>
+  <a href="{{ url_for('signup_page') }}"><button>Sign Up</button></a>
+</nav>
   <h1>Community Reports</h1>
 
   <form id="reportForm" enctype="multipart/form-data">
@@ -49,7 +53,6 @@
     <button type="submit">Login</button>
   </form>
   <button onclick="logoutAdmin()">Logout Admin</button>
-
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     const form = document.getElementById('reportForm');
